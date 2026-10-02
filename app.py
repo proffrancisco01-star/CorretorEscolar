@@ -2,7 +2,7 @@
 # FICHEIRO: app.py
 # DESCRIÇÃO: Corretor Escolar Mobile estilo MobiEduca-me com 
 #            leitura de QR Code, enquadramento visual de bolinhas,
-#            sinal sonoro (bip) e geração de cartões A4.
+#            sinal sonoro (bip) e otimização para câmara traseira.
 # LINGUAGEM: Python 3
 # ==============================================================
 
@@ -28,10 +28,10 @@ st.set_page_config(
     layout="centered"
 )
 
-# 2. INJEÇÃO DE CSS PARA GARANTIR A CÂMARA EM TAMANHO GRANDE NO TELEMÓVEL
+# 2. INJEÇÃO DE CSS PARA GARANTIR A CÂMARA EM TAMANHO GRANDE E RESPONSIVA
 st.markdown("""
     <style>
-    /* Força o contentor da câmara a usar 100% da largura */
+    /* Força o contentor da câmara a usar 100% da largura do ecrã */
     [data-testid="stCameraInput"] {
         width: 100% !important;
         max-width: 100% !important;
@@ -47,12 +47,14 @@ st.markdown("""
         border: 3px solid #007bff;
     }
 
-    /* Otimiza o botão de tirar foto */
+    /* Otimiza o botão de tirar foto no telemóvel */
     [data-testid="stCameraInput"] button {
         width: 100% !important;
         padding: 14px !important;
         font-size: 18px !important;
         font-weight: bold !important;
+        background-color: #007bff !important;
+        color: white !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -208,7 +210,6 @@ def processar_imagem_gabarito(bytes_imagem, prova_selecionada):
     Lê a foto capturada, deteta o QR Code, analisa o enquadramento
     e desenha marcações vermelhas/verdes nas bolinhas lidas.
     """
-    # Converter bytes da imagem para formato OpenCV (NumPy Array)
     nparr = np.frombuffer(bytes_imagem, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
     
@@ -241,13 +242,10 @@ def processar_imagem_gabarito(bytes_imagem, prova_selecionada):
         # Filtrar por área e formato circular
         if 80 < area < 1200 and len(approx) > 5:
             bolinhas_detetadas += 1
-            # Desenha um círculo vermelho na ecrã para mostrar o enquadramento
             (x, y), raio = cv2.minEnclosingCircle(c)
             cv2.circle(img, (int(x), int(y)), int(raio), (0, 0, 255), 2)
 
-    # Converter imagem processada de volta para exibição no Streamlit
     img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    
     return img_rgb, dados_qr, bolinhas_detetadas
 
 # ==============================================================
@@ -339,10 +337,10 @@ with aba_cartoes:
                 mime="application/pdf"
             )
 
-# --- ABA 4: CORRIGIR COM CÂMARA (ESTILO MOBIEDUCA-ME) ---
+# --- ABA 4: CORRIGIR COM CÂMARA ---
 with aba_corrigir:
     st.header("📷 Leitura e Correção Automatizada")
-    st.write("Posicione a câmara do telemóvel sobre o cartão-resposta A5 para realizar a leitura.")
+    st.write("Escolha o método de captura abaixo para realizar a leitura do cartão-resposta.")
 
     provas_lista = carregar_dados(FICHEIRO_PROVAS)
     
@@ -352,22 +350,36 @@ with aba_corrigir:
         provas_dict = {p["nome_prova"]: p for p in provas_lista}
         prova_para_corrigir = st.selectbox("Selecione a Prova a Corrigir:", list(provas_dict.keys()))
         
-        # Captura de Imagem com a câmara do telemóvel
-        foto = st.camera_input("Capturar Cartão-Resposta")
+        metodo_captura = st.radio(
+            "Método de Captura:",
+            ["📸 Câmara Direta", "📁 Carregar Foto da Galeria / Câmara Nativa"],
+            horizontal=True
+        )
 
-        if foto is not None:
-            bytes_foto = foto.getvalue()
-            
+        foto_bytes = None
+
+        if metodo_captura == "📸 Câmara Direta":
+            st.info("💡 Se a câmara frontal abrir, procure o ícone de alternar câmara (🔄) no topo do ecrã da câmara.")
+            foto = st.camera_input("Capturar Cartão-Resposta")
+            if foto is not None:
+                foto_bytes = foto.getvalue()
+        else:
+            st.info("💡 Ao clicar abaixo no telemóvel, poderá escolher 'Tirar Foto' com a câmara traseira original do telemóvel.")
+            arquivo_foto = st.file_uploader("Selecione ou tire foto do cartão:", type=["jpg", "jpeg", "png"])
+            if arquivo_foto is not None:
+                foto_bytes = arquivo_foto.getvalue()
+
+        if foto_bytes is not None:
             # Processa a imagem usando OpenCV
             img_processada, dados_qr, total_bolinhas = processar_imagem_gabarito(
-                bytes_foto, 
+                foto_bytes, 
                 provas_dict[prova_para_corrigir]
             )
 
             # Aciona o bip sonoro ao detetar a leitura
             reproduzir_som_bip()
 
-            # Exibe a imagem processada com as bolinhas enquadradas a vermelho/verde
+            # Exibe a imagem processada com as bolinhas enquadradas
             st.subheader("🎯 Resultado do Enquadramento")
             st.image(img_processada, caption="Cartão Enquadrado com Marcações de Leitura", use_container_width=True)
 
